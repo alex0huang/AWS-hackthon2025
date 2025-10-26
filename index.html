@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Memo Pad</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      background: #0b0c10;
+      color: #e5e5e7;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto;
+    }
+    .wrap {
+      max-width: 880px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .card {
+      background: #121318;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      background: #0f1115;
+      color: #e5e5e7;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 8px;
+      padding: 10px;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: #007aff;
+      box-shadow: 0 0 0 3px rgba(0,122,255,.2);
+    }
+    button {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: #fff;
+      color: #000;
+      border: 1px solid #fff;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+    .answer {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      margin-top: 16px;
+      background: #0f1115;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .muted {
+      color: rgba(255,255,255,.6);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Memo Pad</h1>
+    <div class="card">
+      <textarea id="q" placeholder="Type your question here… (Press Ctrl/Cmd + Enter to send)"></textarea>
+      <button id="send">Send</button>
+      <div id="out" class="answer"></div>
+      <p class="muted">Backend: <code>http://127.0.0.1:8001</code></p>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND = "http://127.0.0.1:8001";
+
+    async function askServer(question) {
+      const res = await fetch(`${BACKEND}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json(); // { answer: "...", passages: [...] }
+    }
+
+    const qEl = document.getElementById("q");
+    const btn = document.getElementById("send");
+    const out = document.getElementById("out");
+
+    async function send() {
+      const text = qEl.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      out.textContent = "Thinking...";
+      try {
+        const data = await askServer(text);
+        out.textContent = data.answer || "(no answer)";
+      } catch (e) {
+        out.textContent = "Request failed: " + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    btn.onclick = send;
+    qEl.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") send();
+    });
+  </script>
+</body>
+</html>
