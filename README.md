@@ -1,68 +1,137 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/README.md b/README.md
-index 021113549ece2551c17b5554ac4fca19131cd15b..56e3f2eef408f2fd64167f93b13ad226057f3567 100644
---- a/README.md
-+++ b/README.md
-@@ -1 +1,35 @@
--# Hackathon
-\ No newline at end of file
-+# Hackathon
-+
-+## Prerequisites
-+
-+### System packages
-+Some optional tools (such as the screenshot/audio helper) rely on PyAudio,
-+which requires the PortAudio system library. Install it before running
-+`pip install -r requirements.txt`:
-+
-+- **macOS:** `brew install portaudio`
-+- **Debian/Ubuntu:** `sudo apt-get install portaudio19-dev`
-+
-+### Python environment
-+```
-+python -m venv .venv
-+source .venv/bin/activate
-+pip install -r requirements.txt
-+```
-+
-+Create a `.env` file (you can start from an `.env.example` template if one is available)
-+and fill in your AWS credentials, S3 bucket/prefix, and Bedrock model details.
-+
-+## Running the FastAPI server
-+```
-+uvicorn server:app --reload --port 8001
-+```
-+
-+Once the server is up you can test the `/ask` endpoint with `curl` or by
-+opening `index.html` in a browser, which will call the API from a simple UI.
-+
-+## Front-end sources
-+The `src/` directory contains a Vite/React prototype (`main.jsx`, `App.jsx`,
-+`AIConsoleUI.jsx`, `ChatBox.jsx`, `styles.css`). To run it you need a Node.js
-+setup with Vite tooling (not included in this repository); once dependencies
-+are installed you can start the dev server with `npm run dev`.
-diff --git a/requirements.txt b/requirements.txt
-index 56c095c85e74e7234788b9fe1f982c8742476d84..cae94cea6b8b4eccaa986961abac5d7f0eb083d2 100644
-GIT binary patch
-literal 520
-zcmZXQO=}}D42JLi6@tRjJ!Cd%8%hIn2&AX(ZUbq_p_HN-D~%hEZ7ez2`S;aKpnE7f
-z>En6zN*A!D26h=cI>mf|AHbB4l+6xVFga6>u8ldoXcjDH`)X2eF^Fqls6*#pjk$p3
-zb_1K$gK46~>$;v*H`8i9A5(?te}%6lW8fX-x}H|En`%1XD-_hte}0=#y3`wP-NDJk
-z6Xr1VpT&76j#zigK8A^nLg6^bYM76XIHBx^Tt&ZzP^c(b*H_h@Hd17n8g~Ci?p9Zq
-z?7eH$@KrTGJK40EDDXat`gx$fiF&dMhE&9K%x3MpkEikGVqJvGUCh8=)LThDqODT@
-zQ+@w^e7ax2x?hf?mJ$Wa5Ch1bU>&oZ8{D%{2Wll_?kfcWI&2>|3urQ(zy*E2_mGsp
-uL28^>QR6WDdTvUPvH&hN0w$TflYA#;cN0rTJ><-DEWv8QwKP0iU;YWU3#()R
+# AWS Hackathon 2025 Toolkit
 
-literal 804
-zcmZ{iK}*9x5QXO~_#cFV=)q#tA|5;xdaHs^#Dj>mW=o^ZrexFB{(1GA*<_)LEZHPG
-zZ{EK5cE7)RawJdUWX5|gwM?btZz~nwAFLho1XgO<*nB7l;HIoK%quBGSJqSud9yAr
-z&u!I94yI;)G1N+Sw&Lkk^fQblh(eYvLb-bEI7HKg_e4fAw%!@s4bP?AGBWAQm7FsV
-z7~0j<qXzd6D$w7UOOM96IZ{4l%3$pCrEHy!5$e=u%;8?{tm5%o;(cd-0Vf4n6(G-W
-z;=tG9_jn$usY}HaAc9qup^*iyJe|2YbbN1;di9wZ_TA1Uu&XLsBt%rMdVjMi&Y?8!
-ztS&ELyD^V_(3PE1^czt1nK(1KPD!lsvNYwhHhX0mq<WXsgcNG_Q~kj_HEn8R)^>J2
-z@h)^)JsMP<{+IN`Odc$!CF-_&2@b*L)GAm{I61wadNcp-`U-M|;)<klbZRcADer0G
-V(R~A`HHveFYwxf#Y&=!%{Q+0rd{Y1b
+A prototype assistant that connects AWS Bedrock models with S3-hosted knowledge so you can ask questions about your own content. The project ships with:
 
- 
-EOF
-)
+- A FastAPI retrieval-augmented backend that pulls `.txt` documents from S3, indexes them with TF-IDF, and prompts Bedrock for grounded answers.
+- A keyboard-driven desktop helper (`screenshot_upload.py`) that can capture screenshots, send them to Bedrock for vision analysis, and optionally record audio for transcription.
+- Lightweight front-ends (a vanilla HTML page and a Vite/React UI prototype) for testing the `/ask` endpoint.
+
+## Repository layout
+
+```
+.
+├── server.py              # FastAPI application with retrieval + Bedrock orchestration
+├── screenshot_upload.py   # Keyboard listener for screenshots and audio capture
+├── bedrock.py             # Minimal Claude text example
+├── converse.py            # Streaming Bedrock example
+├── index.html             # One-page UI that calls /ask
+├── src/                   # React prototype (Vite) with AI console components
+├── requirements.txt       # Python dependencies
+└── README.md
+```
+
+## Backend overview (`server.py`)
+
+- Loads environment variables from `.env` and builds an S3-backed corpus using prefixes defined in `TXT_PREFIXES`.
+- Chunks documents with configurable `CHUNK_SIZE` / `CHUNK_OVERLAP` and creates a TF-IDF matrix.
+- Exposes endpoints:
+  - `GET /health` – index status, active model ID, and whether the screenshot helper is running.
+  - `POST /reload` – rebuild the TF-IDF index from the latest S3 content.
+  - `POST /ask` – returns an answer plus the top passages used for grounding.
+  - `POST /start_script` / `POST /stop_script` – start or stop `screenshot_upload.py` as a child process of the server.
+- Calls the Bedrock model indicated by `LLM_MODEL_ID`, forcing the model to answer only from the supplied passages (otherwise it returns `<NO_ANSWER>`).
+
+## Screenshot & audio helper (`screenshot_upload.py`)
+
+- Global hotkeys:
+  - **Enter**: capture the active monitor, resize/compress, upload to the configured S3 bucket, and request a Bedrock vision analysis.
+  - **Shift**: toggle microphone recording; audio is saved in memory, uploaded to S3, and can be handed to a transcription workflow.
+  - **Space**: start recording with SoundDevice (Whisper-compatible WAV output).
+- Persists analysis text locally under `analysis_logs/` and mirrors it to the `text-description` bucket for retrieval by the backend.
+- Requires desktop dependencies (`pynput`, `mss`, `Pillow`, `sounddevice`, `pyaudio`, etc.) along with PortAudio system libraries.
+
+## Front-end options
+
+- `index.html`: a static HTML/JS helper pointing at `http://127.0.0.1:8001/ask`.
+- `src/`: a Vite + React prototype (`main.jsx`, `App.jsx`, `AIConsoleUI.jsx`, `ChatBox.jsx`, and CSS assets). Install Node.js 18+ and Vite tooling to iterate on this UI.
+
+## Prerequisites
+
+### System packages
+
+Some optional tools (notably audio recording) rely on PortAudio:
+
+- **macOS**: `brew install portaudio`
+- **Debian/Ubuntu**: `sudo apt-get install portaudio19-dev`
+
+### Python environment
+
+1. Create and activate a virtual environment.
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+2. Install dependencies.
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+### Environment variables (`.env`)
+
+Copy `.env.example` (if provided) or create a new `.env` containing at least:
+
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION` (defaults to `us-east-1`)
+- Retrieval settings: `TXT_BUCKET`, optional comma-separated `TXT_PREFIXES`, `CHUNK_SIZE`, `CHUNK_OVERLAP`
+- Model settings: `LLM_MODEL_ID`, `MAX_TOKENS`
+- Optional overrides for the screenshot helper (e.g., different S3 buckets)
+
+## Running the FastAPI server
+
+```bash
+uvicorn server:app --reload --port 8001
+```
+
+The startup hook immediately builds the TF-IDF index. Use `POST /reload` if you add new `.txt` files to your S3 bucket.
+
+### Example `curl`
+
+```bash
+curl -X POST http://127.0.0.1:8001/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What incidents were logged yesterday?"}'
+```
+
+### Managing the screenshot helper via API
+
+```bash
+curl -X POST http://127.0.0.1:8001/start_script
+curl -X POST http://127.0.0.1:8001/stop_script
+```
+
+Logs from the child process are streamed to the server console. The `/health` endpoint reports whether it is currently running.
+
+## Running `screenshot_upload.py` manually
+
+You can also start the helper without the API wrapper:
+
+```bash
+python screenshot_upload.py
+```
+
+Ensure the required S3 buckets exist (`primarydata86` for images and `text-description` for generated text by default) or override them via environment variables.
+
+## React prototype (optional)
+
+```bash
+cd src
+npm install
+npm run dev
+```
+
+Update the fetch URL inside the React components to match your backend host if necessary.
+
+## Additional utilities
+
+- `bedrock.py`: one-off text invocation of the configured Claude/Bedrock model.
+- `converse.py`: demonstrates streaming responses with `converse_stream`.
+
+These scripts assume the same `.env` credentials.
+
+## Troubleshooting tips
+
+- Use `GET /health` to verify the index is ready and see the active Bedrock model.
+- If `/ask` returns "Information … was not mentioned", either no passages were retrieved or the model declined to answer without evidence—check your `TXT_PREFIXES` and ensure S3 text uploads succeed.
+- Audio capture errors usually point to missing PortAudio libraries or lack of microphone permissions.
+- Bedrock permission errors (`AccessDeniedException`) typically require IAM changes for `bedrock:InvokeModel` on the chosen model.
